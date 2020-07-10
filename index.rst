@@ -188,6 +188,8 @@ similarly. This is an expected behavior due to difference in pixel shape.
    :name: pixels-tiles-partitioning.png
    :target: _static/pixels-tiles-partitioning.png
 
+   Distributions for the number of pixels per tile and total pixel area for
+   different pixelization schemes and pixelization level.
 
 
 Temporal restriction
@@ -263,11 +265,48 @@ client-side timeouts that point to significant performance issues that need
 to be understood.
 
 For analyzing these performance issues we instrumented our Cassandra setup
-with a monitoring tool that used Cassandra JMX interface to extract
-monitoring metrics and dump it to a file which was later ingested into
-InfluxDB and exposed to Grafana. Monitoring information was extracted from
-``ap_proto`` log files as well and saved to the same InfluxDB so we could
-correlate things happening on client and server side.
+with a monitoring tool that used Cassandra JMX interface (`DM-23604`_) to
+extract monitoring metrics and dump it to a file which was later ingested
+into InfluxDB and exposed to Grafana. Monitoring information was also
+extracted from ``ap_proto`` log files as well and saved to the same InfluxDB
+so we could correlate things happening on client and server side.
+
+Analyzing monitoring data we quickly established that the reason for poor
+performance in the initial test is an over-committing of the memory. Even
+though JVM was configured to leave significant amount of RAM to other
+processes there were some services (notably GPFS) which also needed
+significant amount of RAM and that caused intensive swapping. Reducing
+memory allocation for JVM allowed us to avoid swapping and improved
+performance to more reasonable level.
+
+
+Java Garbage Collection
+-----------------------
+
+Second round of tests (`DM-23881`_) started with reduced JVM memory
+allocation (160 GB) which eliminated swapping but we still saw frequent
+timeouts on client side. Monitoring showed that on server side there were
+significant delays happening during garbage collection. Apparently default
+garbage collection algorithm (PArNew+CMS) used by Cassandra is not optimal
+for large memory systems. Switching to to a different algorithm (G1GC)
+improved GC efficiency and fixed client-side timeouts. With this setup
+the test was run for 180k visits (approximately 6 months). Write performance
+is improved dramatically and database operations are now dominated by
+reading time which grows approximately linearly with the visit number.
+:numref:`dm-23881-select-fit-1.png` summarizes read performance for all
+separate tables and their total. At 180k visits total read time is
+approximately 10 seconds per visit (per CCD).
+
+
+.. figure:: /_static/dm-23881-select-fit-1.png
+   :name: dm-23881-select-fit-1.png
+   :target: _static/dm-23881-select-fit-1.png
+
+   Select execution time as a function of visit number, "obj_select_real"
+   is time for DIAObject table, "src_select_real" is for DIASource,
+   "fsrc_select_real" is for DIAForcedSource, and "select_real" is the sum
+   of three times. Data for visits below 60k is not included in fits.
+
 
 
 
@@ -301,12 +340,14 @@ correlate things happening on client and server side.
 
 .. DM-20580 	Feb 7-26, 2020
 ..     Test more realistic setup of APDB with Cassandra
+..     - performance is bad, need better monitoring
 
 .. DM-23604 	Feb-Mar 2020
 ..     Implement cassandra monitoring for APDB tests
 
 .. DM-23881 	Mar-Apr 2020
-..     Test Cassandra APDB implementaion with finer partitioning
+..     Test Cassandra APDB implementation with finer partitioning
+..     - switched from HTM to MQ3C level=10
 ..     - switched to G1GC
 ..     - Docker test with three replicas
 
