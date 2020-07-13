@@ -21,12 +21,12 @@ This technical note summarizes the results of a series of tests performed with
 an implementation of :abbr:`APDB (Alert Production Database)` which uses
 Apache Cassandra as a backend. It is a continuation of the previous tests with
 relational databases which were described in `DMTN-113`_. Those tests showed
-serious scalability issues which practically rules out use of that technology
+serious scalability issues which practically rule out use of that technology
 in a production setup. Scaling performance to acceptable level will likely
 need a distributed system that has larger aggregate I/O throughput and IOPS
 and uses RAM for faster data access.
 
-`Apache Cassandra`_ is a well-known NoSQL database system with a number of
+`Apache Cassandra`_ is a popular NoSQL database system with a number of
 attractive features that can help with the implementation of such scalable
 system:
 
@@ -40,7 +40,7 @@ system:
     between performance and data consistency.
 
 These Cassandra features seem to be a close match for the requirements of the
-APDB system and to validate that it can deliver necessary performance we
+APDB system, and to validate that it can deliver necessary performance we
 implemented series of tests using small-scale Cassandra cluster.
 
 
@@ -52,29 +52,30 @@ reasonably large cluster to obtain a meaningful performance numbers. While
 Cassandra can run on a single node it is clearly not an optimal setup for the
 scale of the problem, and some features such as replication cannot be even
 used with a single node cluster. For reliable consistency Cassandra should use
-replication factor three which needs at least three-node cluster, this is not
-going to be optimal for performance because each node has a full set of data.
+replication factor three which needs at least three-node cluster, though this
+is not going to be optimal for performance because each node has a full set of
+data.
 
 As we did not have dedicated server hardware for APDB test we had to borrow
 three machines from PDAC QServ cluster:
 
-  - one machine from existing QServ cluster used initially qs QServ czar node
+  - one machine from existing QServ cluster used initially as QServ czar node
     with full name lsst-qserv-master02 (using short name master02 below),
   - two new identical machines purposed for QServ cluster purchased in 2019.
 
 Here is the summary table with the most important specs:
 
-    +----------+---------------------------+----------------------------+
-    |          | master02                  | master03,04                |
-    +==========+===========================+============================+
-    | CPU      | 2 x Intel Xeon Gold 5120; | 2 x Intel Xeon Gold 5218;  |
-    |          | 2 x 14 cores              | 2 x 16 cores               |
-    +----------+---------------------------+----------------------------+
-    | RAM      | 256 GiB                   | 256 GiB                    |
-    +----------+---------------------------+----------------------------+
-    | Storage  | 12 x 480 GB SATA SSD;     | 5 x 4000 GB NVMe SSD       |
-    |          | RAID controller           |                            |
-    +----------+---------------------------+----------------------------+
++----------+---------------------------+----------------------------+
+|          | master02                  | master03,04                |
++==========+===========================+============================+
+| CPU      | 2 x Intel Xeon Gold 5120; | 2 x Intel Xeon Gold 5218;  |
+|          | 2 x 14 cores              | 2 x 16 cores               |
++----------+---------------------------+----------------------------+
+| RAM      | 256 GiB                   | 256 GiB                    |
++----------+---------------------------+----------------------------+
+| Storage  | 12 x 480 GB SATA SSD;     | 5 x 4000 GB NVMe SSD       |
+|          | RAID controller           |                            |
++----------+---------------------------+----------------------------+
 
 One significant difference between old master02 and new master03,04 machines
 is storage system, old machine has slower SATA storage connected to a single
@@ -82,17 +83,17 @@ RAID controller. This limits performance of the storage, in particular IOPS.
 Here is the approximate aggregate numbers for SSD storage as a whole on two
 types of hardware:
 
-    +-----------------+----------+-------------+
-    |                 | master02 | master03,04 |
-    +=================+==========+=============+
-    | Read IOPS       | 15 k     | 1.5 M       |
-    +-----------------+----------+-------------+
-    | Write IOPS      | 12 k     | 1.1 M       |
-    +-----------------+----------+-------------+
-    | Read bandwidth  | 2.3 GBps | 8.5 GBps    |
-    +-----------------+----------+-------------+
-    | Write bandwidth | 4.5 GBps | 8.5 GBps    |
-    +-----------------+----------+-------------+
++-----------------+----------+-------------+
+|                 | master02 | master03,04 |
++=================+==========+=============+
+| Read IOPS       | 15 k     | 1.5 M       |
++-----------------+----------+-------------+
+| Write IOPS      | 12 k     | 1.1 M       |
++-----------------+----------+-------------+
+| Read bandwidth  | 2.3 GBps | 8.5 GBps    |
++-----------------+----------+-------------+
+| Write bandwidth | 4.5 GBps | 8.5 GBps    |
++-----------------+----------+-------------+
 
 There was no dedicated study of the impact of the lower IOPS rate on master02
 on the performance of the whole Cassandra cluster.
@@ -111,15 +112,15 @@ separate branch due to that.
 Like in previous tests with Oracle clients were running at LSST verification
 cluster using MPI for client communication, there was one client process per
 single CCD, total 189 clients running concurrently. Clients communicate with
-Cassandra cluster using Cassandra native protocol, with all three server
-machines are accessible over public network (except in case of Docker test as
-described below).
+Cassandra cluster using Cassandra native protocol, with all three server nodes
+accessible over public network (except in case of Docker test as described
+below).
 
 
 Partitioning
 ============
 
-Partitioning and clustering indices paly very important role in Cassandra and
+Partitioning and clustering indices play very important role in Cassandra and
 need to be carefully chosen based on how data are produced and accessed. For
 AP pipeline main access method is based on spatial coordinates, each client
 needs to read data corresponding to whole CCD region and produces new data for
@@ -130,13 +131,13 @@ be a combination of the spatial and temporal partitioning.
 
 One of the goals of partitioning in the distributed system like Cassandra is
 to optimally distribute load across multiple nodes in the cluster to avoid
-bottlenecks. In a context of AP pipeline with 189 independent CCD processes it
-means that we want to send queries from different CCD to different partitions.
-Ideally we would want one-to-one correspondence between CCDs and partitions
-but that is of course impossible because CCD position on the sky is random.
-The goal in that case is to optimize the size of the partition and
-partitioning scheme so that on average the load is balanced across cluster and
-performance is optimal.
+bottlenecks. In a context of AP pipeline with 189 independent per-CCD
+processes it means that we want to send queries from different CCDs to
+different partitions. Ideally we would want one-to-one correspondence between
+CCDs and partitions but that is of course impossible because CCD position and
+orientation on the sky is random. The goal in that case is to optimize the
+size of the partition and partitioning scheme so that on average the load is
+balanced across cluster and performance is optimal.
 
 Spatial partitioning
 --------------------
@@ -162,7 +163,7 @@ the Monte-Carlo. :numref:`dm-19536-avg-tile-pix.png` shows average values of
 the two numbers as a function of level. :numref:`dm-19536-hist-tile-pix.png`
 shows distribution of the values for specific level.
 :numref:`pixels-tiles-partitioning.png` shows distributions for number of
-tiles per CCD (tile) and total area of those tiles.
+pixels per CCD (tile) and total area of those pixels.
 
 From the plots one can conclude that MQ3C shows significantly better behavior
 for pixels-per-tile value, while for tile-per-pixel value they behave
@@ -200,10 +201,10 @@ of the important goals in defining schema for APDB would to eliminate the need
 to access the files that were produced long time ago (older than 12 months) so
 that those files could be moved to slower, less expensive storage.
 
-Possible options for schema definition:
+Possible options for schema definition to satisfy this goal:
 
   - Partition by spatial index only, cluster using temporal index. This does
-    not increase then number of partitions or queries but it means that old
+    not increase the number of partitions or queries but it means that old
     SSTable files have to be searched for data they don't have.
   - Partition by both spatial and temporal index. This means increasing
     number of partitions and queries. Due to Cassandra's probabilistic
@@ -213,20 +214,21 @@ Possible options for schema definition:
     some additional logic will need to be implemented. Number of queries will
     grow depending on the granularity of the namespace "partitioning".
 
-LAtter option is probably the one that allows precise control over which data
+Latter option is probably the one that allows precise control over which data
 can be retired to slow storage without impacting performance. Few initial
 tests in this study were done with temporal partitioning but most remaining
-tests used separate client-controlled tables for namespaces.
+tests used separate client-controlled tables for namespaces with one-month
+granularity of the namespaces.
 
 
 Test with Cassandra on PDAC
 ===========================
 
-Below is a description of many tests performed with Cassandra cluster running
-on three PDAC nodes. Tests were done with different setup and configuration,
-not all results of these tests are meaningful of comparable to other results
-due to differences or configuration mistakes that were a part of learning
-process. Cassandra configuration is quite complicated and need a deep
+Below is a description of multiple tests performed with Cassandra cluster
+running on three PDAC nodes. Tests were done with different setup and
+configuration, not all results of these tests are meaningful of comparable to
+other results due to differences or configuration mistakes that were a part of
+learning process. Cassandra configuration is quite complicated and need a deep
 understanding of internal architecture, so trial and error is an essential
 part of the process. There is a lot of details about the tests in
 corresponding JIRA tickets, links to the ticket are included below.
@@ -241,9 +243,10 @@ configuration, and the behavior of the system with some specific goals:
   - understand configuration and find optimal parameters for our setup
   - evaluate management tools and how they can be integrated into workflow
 
-In thi test three nodes were configured slightly differently to take into
-account difference in storage system, in particular master02 node was
-allocated 96 tokens compared to 256 for each other node.
+In this initial test three nodes were configured slightly differently to take
+into account difference in storage system, in particular master02 node was
+allocated 96 tokens compared to 256 for each other node which reduced data
+volume stored on that node and correspondingly load on that host.
 
 One of the early ideas was to try to keep number of I/O operations minimal by
 not flushing the data from memory during the night, forcing the flush and
@@ -260,20 +263,20 @@ for 30k visits (~1 month worth of data) average read time was at the level of
 3 seconds per one CCD per visit, but average store was around 7 seconds. This
 did not make a lot of sense as Cassandra performance for write operations was
 supposed to be much better. Also during the test we observed many cases of
-client-side timeouts that point to significant performance issues that need to
+client-side timeouts that point to significant performance issues that had to
 be understood.
 
 For analyzing these performance issues we instrumented our Cassandra setup
 with a monitoring tool that used Cassandra JMX interface (`DM-23604`_) to
 extract monitoring metrics and dump it to a file which was later ingested into
 InfluxDB and exposed to Grafana. Monitoring information was also extracted
-from ``ap_proto`` log files as well and saved to the same InfluxDB so we could
+from ``ap_proto`` log files and saved to the same InfluxDB so we could
 correlate things happening on client and server side.
 
 Analyzing monitoring data we quickly established that the reason for poor
 performance in the initial test is an over-committing of the memory. Even
 though JVM was configured to leave significant amount of RAM to other
-processes there were some services (notably GPFS) which also needed
+processes there were some services (notably GPFS and Docker) which also needed
 significant amount of RAM and that caused intensive swapping. Reducing memory
 allocation for JVM allowed us to avoid swapping and improved performance to
 more reasonable level.
@@ -316,8 +319,8 @@ approximately 10 seconds per visit (per CCD).
    "fsrc_select_real" is for DIAForcedSource, and "select_real" is the sum
    of three times. Data for visits below 60k is not included in fits.
 
-This test was configured without replication and equal number of tokens on
-each node meaning that each node was serving one third of total data. In
+This test was configured without replication and with equal number of tokens
+on each node meaning that each node was serving one third of total data. In
 production setup we will have more than one replica for hgh availability
 reason. Replication configuration needs to be tested as well even though
 three-node cluster is not ideal for scaling the number of replicas. Cassandra
@@ -364,7 +367,7 @@ storage disk. SSD storage on master02 was organized into 4 virtual disks, they
 are all connected to single RAID controller which could limit overall
 performance. Total number of Cassandra nodes in cluster thus equals 14
 (4+5+5), each node runs in a Docker container. One complication with this
-setup is that we could only map a single docket container to a public routable
+setup is that we could only map a single docker container to a public routable
 interface on a host machine (Cassandra default build does not support
 different port numbers) which means that only three out of 14 nodes could
 serve as coordinator nodes introducing potentially uneven load into the
@@ -390,13 +393,13 @@ performance has improved somewhat in this case but select performance is about
    :name: dm-23881-select-fit-3.png
    :target: _static/dm-23881-select-fit-3.png
 
-   Select execution time as a function of visit number.
+   Select execution time as a function of visit number for test with Docker.
 
 .. figure:: /_static/dm-23881-store-fit-3.png
    :name: dm-23881-store-fit-3.png
    :target: _static/dm-23881-store-fit-3.png
 
-   Store execution time as a function of visit number.
+   Store execution time as a function of visit number for test with Docker.
 
 
 Scylla test
@@ -404,7 +407,7 @@ Scylla test
 
 There exists an alternative open source implementation of Cassandra database -
 `Scylla`_. Scylla is implemented in C++ though for compatibility some pieces
-(e.g. JMX) run inside separate JVM instance. CLient side "native" protocol is
+(e.g. JMX) run inside separate JVM instance. Client side "native" protocol is
 100% compatible with Cassandra so that existing client code in ``ap_proto``
 can run seamlessly with Scylla.
 
@@ -446,10 +449,10 @@ was merged into a single logical LVM RAID0 volume.
 
 Plot :numref:`apdb-scylla2-nb-time-select-fit.png` shows select performance
 for this test. Compared to other cases the behavior looks more complicated --
-initially it grows faster, then it suddenly improves around visit 90k. That
-improvement corresponds to the restart of the Scylla cluster that was
-performed as a cleanup after GPFS outage. Scylla does not use GPFS so it is
-not clear how any potential GPFS issues could affect Scylla. ore likely
+initially select time grows faster, then it suddenly improves around visit
+90k. That improvement corresponds to the restart of the Scylla cluster that
+was performed as a cleanup after GPFS outage. Scylla does not use GPFS so it
+is not clear how any potential GPFS issues could affect Scylla. More likely
 explanation is that Scylla itself developed some inefficiencies that were
 cleared after restart.
 
@@ -476,16 +479,16 @@ Three-replica Cassandra test
 
 For final test we repeated Cassandra test with three replicas but without
 Docker, using three instances similarly to Scylla case, and with identical
-storage setup. One of the goals of this test was to check how consistency
-level affects performance, so part of the test was run at consistency level
-``ONE`` for reading (and ``QUORUM`` for writing).
+storage setup (`DM-25055`_). One of the goals of this test was to check how
+consistency level affects performance, so part of the test was run at
+consistency level ``ONE`` for reading (and ``QUORUM`` for writing).
 
 Plot :numref:`apdb-cass4-nb-time-select-fit-quorum.png` shows select timing
 for the first 180k visits when consistency level for reading was set to
 ``QUORUM``. Performance is significantly slower than for Scylla, and also
 slower than Cassandra performance with three replicas in Docker setup. Plot
 :numref:`apdb-cass4-nb-time-select-fit-one.png` shows timing for last 10k
-visits wen reading consistency was set to ``ONE``. For this case performance
+visits when reading consistency was set to ``ONE``. For this case performance
 is closer to what was seen with Scylla and earlier Docker test, but in both
 those cases consistency was set to ``QUORUM``.
 
@@ -493,7 +496,7 @@ It is not clear why Cassandra performance differs so much between Docker setup
 with 14 nodes (which is sub-optimal) and 3-node configuration. We tried to
 monitor query tracing information provided by Cassandra and there seem to be
 an indication that query execution on master02 takes longer than on two other
-hosts, though exact numbers are hard to extract due to large number of
+hosts, though exact numbers are hard to interpret due to large number of
 concurrent clients. There is also some indication that replica repair
 mechanism may be responsible for some of this effect, that can be investigated
 further.
@@ -526,7 +529,7 @@ after that time.
 
 For summary we want to present the numbers that can be compared easily, so we
 chose as a metric the time to read all table at after 180k visits (about 6
-month of data). Not all above tests were ran up to 180k visits, for those we
+month of data). Not all above tests generated 180k visits, for those we
 include an estimate obtained from extrapolating fitted data.
 
 Here is the summary table for all above tests:
@@ -549,14 +552,16 @@ Here is the summary table for all above tests:
 | Cassandra w/ONE      |     3     |   15      |
 +----------------------+-----------+-----------+
 
+
 Data sizes
 ==========
 
-For reference here is the size of the data on disk for some of the test cases:
+For reference here is the size of the data on disk for some of the test cases,
+this is the total size for all instances:
 
 +----------------------+-----------+---------+-----------+
 | Test type            | #replicas | #visits | Size, TB  |
-+======================+===========+=====================+
++======================+===========+=========+===========+
 | Cassandra w/Docker   |     3     |  100k   |   5.8     |
 +----------------------+-----------+---------+-----------+
 | Scylla               |     1     |  150k   |   3.03    |
@@ -566,9 +571,12 @@ For reference here is the size of the data on disk for some of the test cases:
 | Cassandra            |     3     |  190k   |   11.1    |
 +----------------------+-----------+---------+-----------+
 
+The numbers are consistent and approximately correspond to 2 TB per replica
+per 100k visits.
 
-Unresolved issues
-=================
+
+Unresolved questions
+====================
 
 There was a lot information collected during all these tests, still there are
 some question that have not been answered completely. Here are some
@@ -577,7 +585,7 @@ questions/ideas worth investigating in the future tests:
   - It is not entirely clear why select time is proportional to the data
     volume (or visit number). Naive idea is that data volume is not extremely
     large and time should probably be proportional to the number of I/O
-    operations which ideally should be constant.
+    operations which ideally should remain approximately constant.
   - Efficiency of the client side operation was not measured. It may be
     significant (10-20% or larger) and may have various contributions, there
     may be an opportunity for optimization there too.
@@ -588,24 +596,26 @@ questions/ideas worth investigating in the future tests:
   - It is not clear how master02 storage system affects overall performance.
     There are indications that bottleneck may be there, for the future tests
     it would be better to have more uniform setup.
-  - There are indications that concurrent read/writes cause "read repairs" in
+  - There are indications that concurrent reads/writes cause "read repairs" in
     Cassandra which is a potentially costly operation, would be nice to be
-    able to quantify it.
+    able to quantify and try to reduce it.
+
 
 Conclusion
 ==========
 
 The tests show that small-scale Cassandra cluster can provide better
-performance for storing APDB data than a single-node relation database server.
-Main attractive feature of Cassandra is the ability to scale performance by
-simply extending existing cluster. This scalability needs to be tested in more
-realistic setup than our present test cluster.
+performance for storing APDB data than a single-node (or Oracle RAC) relation
+database server. Main attractive feature of Cassandra is the ability to scale
+performance horizontally by simply extending existing cluster. This
+scalability needs to be tested in more realistic setup than our present test
+cluster.
 
 Based on this experience future tests with Cassandra can benefit from using
 hardware which better matches Cassandra workload:
 
   - JVM seems to work better with smaller resident sets, in that respect it
-    may be better to have larger number of hosts with smaller RAM that a
+    may be better to have larger number of hosts with smaller RAM than a
     single host with huge memory.
   - High IOPS seem to be critical for achieving good read performance with
     APDB data, it is advisable to have all live data on NVMe disks which
@@ -629,7 +639,6 @@ bottlenecks and further improve performance.
 .. _DM-24692: https://jira.lsstcorp.org/browse/DM-24692
 .. _DM-25055: https://jira.lsstcorp.org/browse/DM-25055
 .. _tunable consistency: https://docs.datastax.com/en/cassandra-oss/3.0/cassandra/dml/dmlAboutDataConsistency.html
-
 
 
 .. JIRA APDB tickets, time-ordered
