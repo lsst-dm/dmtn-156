@@ -5,14 +5,6 @@
 
 .. sectnum::
 
-.. TODO: Delete the note below before merging new content to the master branch.
-
-.. note::
-
-   **This technote is not yet published.**
-
-   Summary of performance studies with APDB prototype using three-node Cassandra cluster.
-
 
 Introduction
 ============
